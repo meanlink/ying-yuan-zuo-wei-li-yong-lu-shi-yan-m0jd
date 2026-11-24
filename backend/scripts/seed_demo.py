@@ -1,6 +1,9 @@
 from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 from src.database import SessionLocal
+from src.groupbuy import service as groupbuy
+from src.groupbuy.models import GroupOrder
+from src.groupbuy.schemas import SubmitGroupEntry
 from src.models import ExperimentUnit, ScreeningPlan, TicketObservation, User
 from src.security import hash_password
 
@@ -40,6 +43,14 @@ def seed():
                     sold = (i % 5 != 0) if unit.group_name == "treatment" else (i % 3 != 0)
                     db.add(TicketObservation(unit_id=unit.id, ticket_code=f"SEED-CINEMA-{number:03d}", seat_label=f"{unit.seat_zone}-{i+1:02d}", sold=sold, price_paid=58 if sold else 0, source="seed-box-office"))
                     number += 1
+        db.flush()
+        boxoffice = db.query(User).filter_by(email="boxoffice@cinema.local").first()
+        control_unit = next(unit for unit in units if unit.group_name == "control")
+        for order_no, seats in (("GB-DEMO-001", 4), ("GB-DEMO-002", 3)):
+            if not db.query(GroupOrder).filter_by(plan_id=plan.id, order_no=order_no).first():
+                groupbuy.register_entry(db, plan, SubmitGroupEntry(
+                    order_no=order_no, unit_id=control_unit.id, seats=seats,
+                    note="演示团购订单，单一实验组入样"), boxoffice)
         db.commit()
         print("seed ok")
     finally:

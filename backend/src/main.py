@@ -7,6 +7,7 @@ from .database import engine
 from .middlewares.rate_limit import RateLimitMiddleware
 from .middlewares.request_id import RequestIdMiddleware
 from .routes import auth, observations, operations, plans
+from .groupbuy import routes as groupbuy
 from .settlement import routes as settlement
 
 app = FastAPI(title="影院座位利用率实验")
@@ -17,6 +18,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(plans.router, prefix="/api")
 app.include_router(operations.router, prefix="/api")
 app.include_router(observations.router, prefix="/api")
+app.include_router(groupbuy.router, prefix="/api")
 app.include_router(settlement.router, prefix="/api")
 
 @app.get("/health")

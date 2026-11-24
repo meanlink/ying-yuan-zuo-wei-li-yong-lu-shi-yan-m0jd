@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
+import json
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
@@ -8,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..models import ExperimentUnit, RevenueReview, ScreeningPlan, TicketObservation, now_utc
 from ..operations_models import PosCloseout, SchedulingPilot
+from ..groupbuy import service as groupbuy
 from .workflow import audit
 
 CINEMA_TZ = ZoneInfo('Asia/Shanghai')
@@ -53,13 +55,26 @@ def closeout_status(snapshot, attempts):
     return latest.status
 
 
+def review_observation_count(review):
+    """复盘时的观测座位总数（含团购座位），用于班结一致性校验。
+
+    历史复盘没有该字段时退回复盘样本数。
+    """
+    try:
+        payload = json.loads(review.result_json or '{}')
+    except ValueError:
+        payload = {}
+    return payload.get('observation_count', review.sample_size)
+
+
 def require_closeouts(db, plan_id, *, review=None):
     rows = summarize_closeouts(db, plan_id)
     # Existing experiments opt into the gate when the first POS batch is entered.
     if any(attempts for _, _, attempts in rows):
         if any(closeout_status(snapshot, attempts) != 'matched' for _, snapshot, attempts in rows):
             raise HTTPException(409, '票房班结尚有未对齐或过期单元，请完成对账后再继续')
-        if review and review.sample_size != sum(snapshot['observed'] for _, snapshot, _ in rows):
+        if review and review_observation_count(review) != sum(
+                snapshot['observed'] for _, snapshot, _ in rows):
             raise HTTPException(409, '班结后观测数已变化，请重跑分析后再审批')
     return rows
 
@@ -97,8 +112,11 @@ def save_pilot(db, plan_id, payload, actor):
         raise HTTPException(404, '本排片的收益复盘不存在')
     if plan.status != 'approved' or review.analysis_status != 'approved':
         raise HTTPException(409, '收益复盘审批完成后才能派发试行工单')
+    changed, _ = groupbuy.review_sample_changed(db, plan_id, review)
+    if changed:
+        raise HTTPException(409, '团购样本在复盘后发生变化，请重算分析后再派发试行')
     rows = require_closeouts(db, plan_id, review=review)
-    if review.sample_size != sum(snapshot['observed'] for _, snapshot, _ in rows):
+    if review_observation_count(review) != sum(snapshot['observed'] for _, snapshot, _ in rows):
         raise HTTPException(409, '已审批复盘的观测数已变化，请更新复盘')
     unit = db.get(ExperimentUnit, payload.unit_id)
     if not unit or unit.plan_id != plan.id or unit.group_name != 'treatment':

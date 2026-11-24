@@ -14,7 +14,7 @@ Orbital Cinema 在周末 IMAX 场次中比较传统前排策略与中排动态�
 
 - 排片版本。维护影片、版本、厅次、场次、座位容量和排片状态。
 - 座位实验。配置 control / treatment 单元，记录厅次、场次、座位区域和样本数。
-- 票务观测。按票务编码记录座位是否售出、价格、时间和来源，并阻止重复编码。
+- 票务观测。按票务编码记录座位是否售出、价格、时间和来源，并阻止重复编码；团购票按订单号分次补录，座位照常进入观测台账。
 - 收益复盘。计算 Bootstrap 差异区间、厅次分层效应量和平衡比，支持重跑和收益审批。
 - 横切能力。JWT 角色权限、审计日志、请求限流、统一错误响应、worker 心跳。
 
@@ -69,14 +69,16 @@ backend/src/models.py                 领域实体和审计日志
 backend/src/routes/plans.py           排片、实验、观测、分析和审批接口
 backend/src/services/analytics.py     Bootstrap、平衡比、分层效应量
 backend/src/services/workflow.py      状态流转和业务规则
+backend/src/groupbuy/                 团购票登记、整单剔除与复盘失效
 backend/scripts/seed_demo.py          幂等演示数据
 frontend/src/app.js                   页面、状态和用户动作
+frontend/src/groupbuy.js              团购登记与复盘剔除明细页面
 frontend/src/api.js                   后端 API 封装
 frontend/src/styles.css               实验室档案视觉系统
 test-artifacts/gb-1057/tests          API 端到端和算法测试
 ```
 
-共享枚举在前后端分别出现。排片状态在 `backend/src/routes/plans.py`、`backend/src/services/workflow.py` 和 `frontend/src/app.js` 中出现，实验组枚举在 `backend/src/routes/plans.py`、`backend/src/services/analytics.py` 和 `frontend/src/app.js` 中出现。后端中间件是 `RateLimitMiddleware` 与 `RequestIdMiddleware`，前端共用组件通过 `nav`、`panel-head`、`button`、`status` 和 `trace` 结构复用，`fmtPct`、`run` 和 `load` 提供共享格式化、错误处理和加载逻辑。
+共享枚举在前后端分别出现。排片状态在 `backend/src/routes/plans.py`、`backend/src/services/workflow.py` 和 `frontend/src/app.js` 中出现，实验组枚举在 `backend/src/routes/plans.py`、`backend/src/services/analytics.py`、`backend/src/groupbuy/service.py` 和 `frontend/src/app.js` 中出现。后端中间件是 `RateLimitMiddleware` 与 `RequestIdMiddleware`，前端共用组件通过 `nav`、`panel-head`、`button`、`status` 和 `trace` 结构复用，`fmtPct`、`run` 和 `load` 提供共享格式化、错误处理和加载逻辑。
 
 ## 许可证
 
@@ -86,8 +88,9 @@ test-artifacts/gb-1057/tests          API 端到端和算法测试
 
 - **票房班结对账**。票房专员按实验单元登记 POS 批次、观测座位数、售出票数和实收金额。系统保存登记时的观测快照和对账差异。登记第一张回执后，所有单元须对齐才可运行或审批分析。迟到观测会使相关回执过期，需要补对后重新分析。
 - **审批后排片试行**。收益经理引用当前观测对应的已审批复盘，选择 treatment 座区、下一场日期时间和投放座数。排片策划记录排片系统回执和实际投放数；收益经理可撤回尚未执行的工单。工单检查同影厅开场冲突，保留原复盘与撤回历史。
+- **团购票登记**。票房专员按订单号登记团购票，同一订单号可重复提交分次补录。每次补录都为对应座位写入正常的票务观测，因此所有座位照常进入票房统计和班结对账。一张订单的座位一旦横跨 control 与 treatment 两组，整单退出实验样本（仍计入票房）。晚到补录让原先入样的订单变成跨组时，引用过该订单的已审批/待审批复盘失效，旧签字与失效原因留档，需重算后再审；失效复盘不再派发新试行工单，已确认的工单照常执行。补录与审批都在排片行锁上串行，以先入账的一方为准。复盘页面展示入样与剔除的团购订单号及座位数。
 
-通过页首「当前排片」在版本之间切换。已有 PostgreSQL 卷启动时自动补齐 `pos_closeouts` 和 `scheduling_pilots`。模块使用 `operations_models.py`、`operations_schemas.py`、`services/operations.py` 和 `frontend/src/operations.js`，异常及操作写入现有审计。没有登记过 POS 回执的历史排片可继续按原流程复盘。
+通过页首「当前排片」在版本之间切换。已有 PostgreSQL 卷启动时自动补齐 `pos_closeouts`、`scheduling_pilots` 和 `group_orders` 等团购表。模块使用 `operations_models.py`、`operations_schemas.py`、`services/operations.py` 和 `frontend/src/operations.js`，团购模块使用 `groupbuy/models.py`、`groupbuy/schemas.py`、`groupbuy/service.py`、`groupbuy/routes.py` 和 `frontend/src/groupbuy.js`，异常及操作写入现有审计。没有登记过 POS 回执的历史排片可继续按原流程复盘；没有团购登记的历史复盘不受影响。
 
 ### 试行场次结算
 

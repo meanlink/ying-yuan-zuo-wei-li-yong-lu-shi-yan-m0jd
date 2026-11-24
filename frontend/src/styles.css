@@ -43,3 +43,14 @@
 #toast{position:fixed;z-index:4;right:20px;bottom:20px;max-width:min(430px,calc(100vw - 40px));padding:11px 15px;background:var(--ink);color:var(--paper);box-shadow:0 8px 25px oklch(25% .03 65 / .18);opacity:0;visibility:hidden;transform:translateY(6px);transition:opacity .18s ease,transform .18s ease;pointer-events:none}
 #toast.show{visibility:visible;opacity:1;transform:translateY(0)}
 #toast[data-kind="error"]{background:oklch(42% .135 31)}
+
+.status.invalidated{color:var(--red);background:oklch(58% .14 28 / .1)}
+.result-banner.invalidated{border-color:var(--red);background:oklch(96% .018 29)}
+.group-review{margin-top:24px;padding:18px;border:1px solid var(--line);background:oklch(97% .02 84)}
+.group-review p{margin:6px 0;font-size:13px;line-height:1.6}
+.group-review .group-excluded{margin:10px 0 0;padding-left:18px;font-size:12px;line-height:1.7}
+.group-excluded .control,.groupbuy-page .control{color:var(--ink)}
+.ops-history ul{margin:8px 0;padding-left:18px;font-size:12px;line-height:1.7}
+.ops-history li span{font:10px "Space Mono";margin-left:6px}
+.ops-history li span.treatment{color:var(--orange)}
+.ops-history li small{display:block}

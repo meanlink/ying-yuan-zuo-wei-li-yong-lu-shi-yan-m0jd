@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..auth import current_user, require_roles
 from ..database import get_db
+from ..groupbuy import service as groupbuy
 from ..models import ExperimentUnit, RevenueReview, ScreeningPlan, TicketObservation, User
 from ..schemas import ObservationCreate, PlanCreate, UnitCreate, ReviewApprove
 from ..services.operations import plan_by_id, require_closeouts
@@ -22,6 +23,7 @@ def observation_json(o, unit_map):
     return {"id": o.id, "unit_id": o.unit_id, "ticket_code": o.ticket_code, "seat_label": o.seat_label, "sold": o.sold, "price_paid": o.price_paid, "observed_at": o.observed_at.isoformat(), "source": o.source, "group_name": u.group_name, "hall_name": u.hall_name, "session_code": u.session_code, "seat_zone": u.seat_zone}
 
 def review_json(r):
+    if r is None: return None
     return {"id": r.id, "plan_id": r.plan_id, "analysis_status": r.analysis_status, "sample_size": r.sample_size, "control_rate": r.control_rate, "treatment_rate": r.treatment_rate, "absolute_diff": r.absolute_diff, "ci_low": r.ci_low, "ci_high": r.ci_high, "stratified_effect": r.stratified_effect, "balance_ratio": r.balance_ratio, "is_stratified": r.is_stratified, "notes": r.notes, "approved_at": r.approved_at.isoformat() if r.approved_at else None}
 
 @router.get("")
@@ -81,7 +83,14 @@ def analysis(plan_id: int, stratified: bool = False, db: Session = Depends(get_d
 
 @router.get("/{plan_id}/reviews")
 def reviews(plan_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    return {"items": [review_json(r) for r in db.query(RevenueReview).filter_by(plan_id=plan_id).order_by(RevenueReview.id.desc()).all()]}
+    rows = db.query(RevenueReview).filter_by(plan_id=plan_id).order_by(RevenueReview.id.desc()).all()
+    return {"items": [{**review_json(r), "group_orders": groupbuy.review_group_detail(db, r)} for r in rows]}
+
+@router.get("/{plan_id}/reviews/{review_id}")
+def review_detail(plan_id: int, review_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    review = db.get(RevenueReview, review_id)
+    if not review or review.plan_id != plan_id: raise HTTPException(404, "复盘不存在")
+    return {**review_json(review), "group_orders": groupbuy.review_group_detail(db, review)}
 
 @router.post("/{plan_id}/reviews/{review_id}/approve")
 def approve(plan_id: int, review_id: int, payload: ReviewApprove, db: Session = Depends(get_db), user: User = Depends(require_roles("revenue", "admin"))):
